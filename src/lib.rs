@@ -135,7 +135,10 @@ impl<P: Predictor> Detector<P> {
 	/// The output score is between `[0, 1]`. Scores over 0.5 can generally be considered voice, but the exact threshold
 	/// can be adjusted according to application-specific needs.
 	pub fn predict_i16(&mut self, frame: &[i16]) -> f32 {
-		assert_eq!(frame.len(), 256);
+		debug_assert_eq!(frame.len(), 256, "frame should be exactly 256 samples");
+		if frame.len() != 256 {
+			return -1.0;
+		}
 
 		unsafe {
 			ptr::copy(self.sample_ring_buffer.as_ptr().add(256), self.sample_ring_buffer.as_mut_ptr(), 512);
@@ -159,7 +162,10 @@ impl<P: Predictor> Detector<P> {
 	/// The output score is between `[0, 1]`. Scores over 0.5 can generally be considered voice, but the exact threshold
 	/// can be adjusted according to application-specific needs.
 	pub fn predict_f32(&mut self, frame: &[f32]) -> f32 {
-		assert_eq!(frame.len(), 256);
+		debug_assert_eq!(frame.len(), 256, "frame should be exactly 256 samples");
+		if frame.len() != 256 {
+			return -1.0;
+		}
 
 		debug_assert!(
 			*frame
