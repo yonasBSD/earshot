@@ -17,7 +17,8 @@ let mut detector = Detector::default();
 
 let mut frame_receiver = ...
 while let Some(frame) = frame_receiver.recv() {
-	// `frame` is Vec<i16> with length 256. Each frame passed to the detector must be exactly 256 samples.
+	// `frame` is Vec<i16> with length 256.
+	// Each frame passed to the detector must be exactly 256 samples (16ms) @ 16 KHz sample rate.
 	// f32 [-1, 1] frames are also supported with `predict_f32`.
 	let score = detector.predict_i16(&frame);
 	// Score is between 0-1; 0 = no voice, 1 = voice.
