@@ -1,5 +1,8 @@
 #![cfg_attr(all(not(feature = "std"), not(test)), no_std)]
 
+#[cfg(all(not(feature = "std"), not(feature = "libm")))]
+compile_error!("earshot's `libm` feature must be enabled when the `std` feature is disabled");
+
 extern crate alloc;
 
 use alloc::{boxed::Box, vec, vec::Vec};
@@ -10,7 +13,7 @@ mod fft;
 mod util;
 
 pub use self::default_predictor::DefaultPredictor;
-use self::util::OnceLock;
+use self::util::{OnceLock, libm};
 
 /// Used by [`Detector`] to predict the VAD score of a frame based on extracted features.
 ///

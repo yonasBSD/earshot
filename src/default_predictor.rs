@@ -1,5 +1,7 @@
 use alloc::{vec, vec::Vec};
 
+use crate::util::libm;
+
 const _WEIGHTS_LEN: usize = include_bytes!("weights.bin").len();
 static WEIGHTS: &[u8; _WEIGHTS_LEN] = {
 	#[repr(C, align(4))]
@@ -43,7 +45,7 @@ impl crate::Predictor for DefaultPredictor {
 	}
 
 	fn normalize(&self, features: &mut [f32]) {
-		let i_rms = 1. / (features.iter().map(|x| x * x).sum::<f32>() / features.len() as f32).sqrt();
+		let i_rms = 1. / libm::sqrtf(features.iter().map(|x| x * x).sum::<f32>() / features.len() as f32);
 		for (i, v) in features.iter_mut().enumerate() {
 			*v = NORM_WEIGHT[i] * *v * i_rms;
 		}
@@ -180,7 +182,7 @@ fn mingru<const IN_DIM: usize>(features: &[f32], h: &[f32], weight: &[f32], out:
 
 #[inline]
 fn sigmoid(x: f32) -> f32 {
-	1. / (1. + (-x).exp())
+	1. / (1. + libm::expf(-x))
 }
 
 #[inline(never)]

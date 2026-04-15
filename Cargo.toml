@@ -11,11 +11,11 @@ rust-version = "1.87"
 
 [features]
 default = [ "std" ]
-# Currently just impls `std::error::Error` for the `Error` type.
 std = []
+libm = [ "dep:libm" ]
 
 [dependencies]
-libm = "0.2"
+libm = { version = "0.2", optional = true }
 
 [dev-dependencies]
 criterion = "0.7"
