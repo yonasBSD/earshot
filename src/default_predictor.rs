@@ -1,3 +1,5 @@
+use alloc::{vec, vec::Vec};
+
 const _WEIGHTS_LEN: usize = include_bytes!("weights.bin").len();
 static WEIGHTS: &[u8; _WEIGHTS_LEN] = {
 	#[repr(C, align(4))]
