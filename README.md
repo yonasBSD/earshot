@@ -34,7 +34,7 @@ Earshot is very embedded-friendly: each instance of `Detector` uses ~8 KiB of st
 In contrast, Silero's model is 2 MiB, TEN's is 310 KiB, but both require ONNX Runtime, which adds an additional 8 MB to your binary (+ a whole lot more memory).
 
 ## `#![no_std]`
-Earshot supports `#![no_std]`, but it does require an allocator & the [`libm`](https://crates.io/crates/libm) crate. The `std` feature is enabled by default, so add `default-features = false` and `features = [ "libm" ]` to enable `#![no_std]`:
+Earshot supports `#![no_std]`, but it does require the [`libm`](https://crates.io/crates/libm) crate. The `std` feature is enabled by default, so add `default-features = false` and `features = [ "libm" ]` to enable `#![no_std]`:
 
 ```toml
 [dependencies]
