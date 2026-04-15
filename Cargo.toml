@@ -21,6 +21,9 @@ libm = { version = "0.2", optional = true }
 
 [dev-dependencies]
 criterion = "0.7"
+hound = "3.5"
+rubato = "0.16"
+itertools = "0.14"
 
 [[bench]]
 name = "vad"
