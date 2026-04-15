@@ -11,7 +11,9 @@ rust-version = "1.87"
 
 [features]
 default = [ "std" ]
-std = []
+std = [ "alloc" ]
+# Enables `Detector::new_boxed`
+alloc = []
 libm = [ "dep:libm" ]
 
 [dependencies]

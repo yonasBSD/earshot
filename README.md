@@ -29,7 +29,7 @@ while let Some(frame) = frame_receiver.recv() {
 ```
 
 ## Binary & memory size
-Earshot is very embedded-friendly: each instance of `Detector` uses ~8 KiB of memory to store the audio buffer & neural network state. Binary footprint is ~100 KiB; the neural network is 75 KiB of that.
+Earshot is very embedded-friendly: each instance of `Detector` uses ~8 KiB of stack space to store the audio buffer & neural network state. Binary footprint is ~110 KiB; the neural network is 75 KiB of that.
 
 In contrast, Silero's model is 2 MiB, TEN's is 310 KiB, but both require ONNX Runtime, which adds an additional 8 MB to your binary (+ a whole lot more memory).
 

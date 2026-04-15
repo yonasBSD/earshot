@@ -1,19 +1,21 @@
 #![cfg_attr(all(not(feature = "std"), not(test)), no_std)]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 
 #[cfg(all(not(feature = "std"), not(feature = "libm")))]
 compile_error!("earshot's `libm` feature must be enabled when the `std` feature is disabled");
 
+#[cfg(feature = "alloc")]
 extern crate alloc;
 
-use alloc::{boxed::Box, vec, vec::Vec};
 use core::{f32, ptr};
 
 mod default_predictor;
 mod fft;
+mod filters;
 mod util;
 
 pub use self::default_predictor::DefaultPredictor;
-use self::util::{OnceLock, libm};
+use self::util::libm;
 
 /// Used by [`Detector`] to predict the VAD score of a frame based on extracted features.
 ///
@@ -39,62 +41,17 @@ const N_BINS: usize = FFT_SIZE / 2 + 1;
 const PRE_EMPHASIS_COEFF: f32 = 0.97;
 const POWER_FAC: f32 = 1. / (32768.0f32 * 32768.0);
 
-struct Filters {
-	mel_coeffs: Box<[(usize, Box<[f32]>)]>,
-	window: Box<[f32]>
-}
-
-impl Filters {
-	pub fn new() -> Self {
-		let low_mel = 2595. * libm::log10f(1.0f32 + 0.0 / 700.);
-		let high_mel = 2595. * libm::log10f(1.0f32 + 8000. / 700.);
-
-		let mut bin_points = [0; 42];
-		for i in 0..N_MELS + 2 {
-			let mel = i as f32 * (high_mel - low_mel) / (N_MELS as f32 + 1.0) + low_mel;
-			let hz = 700.0 * (libm::exp10f(mel / 2595.) - 1.);
-			bin_points[i] = ((FFT_SIZE as f32 + 1.) * hz / 16000.) as usize;
-		}
-
-		let mut mel_coeffs = Vec::with_capacity(N_MELS);
-		for i in 0..N_MELS {
-			let mut points = Vec::with_capacity(bin_points[i + 2] - bin_points[i]);
-			for j in bin_points[i]..bin_points[i + 1] {
-				points.push((j - bin_points[i]) as f32 / (bin_points[i + 1] - bin_points[i]) as f32);
-			}
-
-			for j in bin_points[i + 1]..bin_points[i + 2] {
-				points.push((bin_points[i + 2] - j) as f32 / (bin_points[i + 2] - bin_points[i + 1]) as f32);
-			}
-
-			// Mel filterbank is naturally very sparse. Rather than waste compute & storage on the whole matrix, only store
-			// non-zero elements.
-			mel_coeffs.push((bin_points[i], points.into_boxed_slice()));
-		}
-
-		// hann window
-		let mut window = vec![0.0; WINDOW_SIZE].into_boxed_slice();
-		let df = f32::consts::PI / WINDOW_SIZE as f32;
-		for i in 0..WINDOW_SIZE {
-			let x = libm::sinf(df * i as f32);
-			window[i] = x * x;
-		}
-
-		Self {
-			mel_coeffs: mel_coeffs.into_boxed_slice(),
-			window
-		}
-	}
-}
-
-static FILTERS: OnceLock<Filters> = OnceLock::new();
-
+/// A voice activity detector. Create one per separate audio stream.
+///
+/// # Stack size
+/// `Detector` is a fairly large object, as it allocates its state (about 8 KiB by default) on the stack. If stack space
+/// is a concern, use a `Box<Detector>` instead. (Maps or vectors of `Detector`s shouldn't need to worry about this).
 pub struct Detector<P = DefaultPredictor> {
 	predictor: P,
 	prev_signal: f32,
-	sample_ring_buffer: Box<[f32]>,
-	features: Box<[f32]>,
-	buffer: Box<[f32]>
+	sample_ring_buffer: [f32; 768],
+	features: [f32; N_FEATURES * N_CONTEXT_FRAMES],
+	buffer: [f32; 1026]
 }
 
 impl Default for Detector<DefaultPredictor> {
@@ -103,18 +60,68 @@ impl Default for Detector<DefaultPredictor> {
 	}
 }
 
-impl<P: Predictor> Detector<P> {
-	pub fn new(predictor: P) -> Self {
-		// create filters now so we don't accidentally make the first `predict` take super long
-		FILTERS.get_or_init(Filters::new);
+impl Detector<DefaultPredictor> {
+	pub const fn const_default() -> Detector<DefaultPredictor> {
+		Self::new(DefaultPredictor::new())
+	}
 
+	/// Creates a new `Detector` directly on the heap, without ever allocating the large amount of stack space that
+	/// `Detector` normally uses.
+	///
+	/// This is preferred over `Box::<Detector>::default()`, since that creates the detector on the stack before moving
+	/// it to the heap.
+	#[cfg(feature = "alloc")]
+	#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
+	pub fn default_boxed() -> Box<Self> {
+		// TODO: use new_zeroed instead, MSRV 1.92
+		let mut boxed = alloc::boxed::Box::<Self>::new_uninit();
+		let mut detector = unsafe {
+			let boxed_ptr = boxed.as_mut_ptr();
+			core::ptr::write(&raw mut (*boxed_ptr).predictor, DefaultPredictor::new());
+			boxed.assume_init()
+		};
+		detector.prev_signal = 0.0;
+		detector.sample_ring_buffer.fill(0.0);
+		detector.features.fill(0.0);
+		detector.buffer.fill(0.0);
+		detector
+	}
+}
+
+impl<P: Predictor> Detector<P> {
+	/// Creates a new `Detector` on the stack.
+	///
+	/// To create directly on the heap, see [`Detector::new_boxed`] instead.
+	pub const fn new(predictor: P) -> Self {
 		Self {
 			predictor,
 			prev_signal: 0.0,
-			sample_ring_buffer: vec![0.0; 768].into_boxed_slice(),
-			features: vec![0.0; N_FEATURES * N_CONTEXT_FRAMES].into_boxed_slice(),
-			buffer: vec![0.0; 1026].into_boxed_slice()
+			sample_ring_buffer: [0.0; 768],
+			features: [0.0; N_FEATURES * N_CONTEXT_FRAMES],
+			buffer: [0.0; 1026]
 		}
+	}
+
+	/// Creates a new `Detector` directly on the heap, without ever allocating the large amount of stack space that
+	/// `Detector` normally uses.
+	///
+	/// This is preferred over `Box::new(Detector::new(predictor))`, since that creates the detector on the stack before
+	/// moving it to the heap.
+	#[cfg(feature = "alloc")]
+	#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
+	pub fn new_boxed(predictor: P) -> Box<Self> {
+		// TODO: use new_zeroed instead, MSRV 1.92
+		let mut boxed = alloc::boxed::Box::<Self>::new_uninit();
+		let mut detector = unsafe {
+			let boxed_ptr = boxed.as_mut_ptr();
+			core::ptr::write(&raw mut (*boxed_ptr).predictor, predictor);
+			boxed.assume_init()
+		};
+		detector.prev_signal = 0.0;
+		detector.sample_ring_buffer.fill(0.0);
+		detector.features.fill(0.0);
+		detector.buffer.fill(0.0);
+		detector
 	}
 
 	/// Resets the internal state of the voice activity detector.
@@ -195,11 +202,9 @@ impl<P: Predictor> Detector<P> {
 	}
 
 	fn predict_inner(&mut self) -> f32 {
-		let filters = FILTERS.get_or_init(Filters::new);
-
 		// windowize for FFT
 		for i in 0..WINDOW_SIZE {
-			self.buffer[i] = self.sample_ring_buffer[i] * filters.window[i];
+			self.buffer[i] = self.sample_ring_buffer[i] * filters::HANN_WINDOW[i];
 		}
 		// FFT size is 1024 but window size is 768, so fill the rest with zeros (+2 to store nyquist frequency)
 		unsafe {
@@ -220,7 +225,7 @@ impl<P: Predictor> Detector<P> {
 		let cur_frame_features = &mut self.features[(N_FEATURES * (N_CONTEXT_FRAMES - 1))..];
 		for i in 0..N_MELS {
 			let mut per_band_value = 0.;
-			let (start, ref coeffs) = filters.mel_coeffs[i];
+			let (start, coeffs) = filters::MEL_COEFFS[i];
 			for (offs, coeff) in coeffs.iter().enumerate() {
 				per_band_value += self.buffer[start + offs] * *coeff;
 			}

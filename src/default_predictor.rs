@@ -1,5 +1,3 @@
-use alloc::{vec, vec::Vec};
-
 use crate::util::libm;
 
 const _WEIGHTS_LEN: usize = include_bytes!("weights.bin").len();
@@ -30,12 +28,12 @@ static RNN2_WEIGHT: &[f32; 8192] = weight(10961);
 static OUTPUT_WEIGHT: &[f32; 128] = weight(19153);
 
 pub struct DefaultPredictor {
-	state: Vec<f32>
+	state: [f32; 128]
 }
 
 impl DefaultPredictor {
-	pub fn new() -> Self {
-		Self { state: vec![0.0; 128] }
+	pub const fn new() -> Self {
+		Self { state: [0.0; 128] }
 	}
 }
 
